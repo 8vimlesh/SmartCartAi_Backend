@@ -79,6 +79,8 @@ def login():
         'user_id': user['id'],
         'exp': datetime.utcnow() + timedelta(days=7)
     }, app.config['SECRET_KEY'], algorithm='HS256')
+    if isinstance(token, bytes):
+        token = token.decode('utf-8')
     
     return jsonify({
         'status': 'ok',
@@ -94,13 +96,21 @@ def profile(current_user):
     return jsonify({'user': current_user, 'alerts': alerts})
 
 # ── Frontend pages ─────────────────────────
-@app.route('/')
-def index():
-    return send_from_directory('frontend-react/dist', 'index.html')
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def index(path):
+    dist_dir = os.path.join(app.root_path, 'frontend-react', 'dist')
+    index_file = os.path.join(dist_dir, 'index.html')
 
-@app.route('/reviews')
-def reviews_page():
-    return send_from_directory('frontend-react/dist', 'reviews.html')
+    if os.path.exists(index_file):
+        if path and os.path.exists(os.path.join(dist_dir, path)):
+            return send_from_directory(dist_dir, path)
+        return send_from_directory(dist_dir, 'index.html')
+
+    return jsonify({
+        'status': 'running',
+        'message': 'Backend is running, but frontend build not found. Please build your React app or serve the frontend separately.'
+    })
 
 # ── Compare prices ─────────────────────────
 @app.route('/api/compare')
@@ -342,6 +352,14 @@ def helpful():
 @app.route('/api/health')
 def health():
     return jsonify({'status': 'running', 'time': datetime.now().isoformat()})
+
+@app.errorhandler(404)
+def handle_404(error):
+    return jsonify({'error': 'Not found', 'path': request.path}), 404
+
+@app.errorhandler(500)
+def handle_500(error):
+    return jsonify({'error': 'Server error', 'message': str(error)}), 500
 
 if __name__ == '__main__':
     port  = int(os.getenv('PORT', 5000))
