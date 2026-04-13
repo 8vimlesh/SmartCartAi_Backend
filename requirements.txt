@@ -14,3 +14,4 @@ werkzeug
 scikit-learn
 numpy
 pandas
+gunicorn app:app
