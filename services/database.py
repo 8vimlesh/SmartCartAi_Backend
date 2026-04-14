@@ -181,7 +181,7 @@ def get_product_fallback(query):
 
 def check_alerts(product_name, platform, current_price):
     """Check if any alerts should be triggered."""
-    from mailer import send_alert_email
+    from .mailer import send_alert_email
     
     alerts = list(alerts_col.find({
         'product_name': product_name,

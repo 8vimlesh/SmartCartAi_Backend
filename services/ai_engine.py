@@ -40,7 +40,14 @@ def generate_simulated_history(current_records):
             })
             
     # Combine simulated data with the actual known real records
-    return simulated + current_records
+    combined = simulated + current_records
+    
+    # Ensure timestamps are actual datetime objects for pandas
+    for rec in combined:
+        if isinstance(rec['timestamp'], str):
+             rec['timestamp'] = pd.to_datetime(rec['timestamp'])
+             
+    return combined
 
 def predict_insights(history_records):
     """
@@ -50,38 +57,57 @@ def predict_insights(history_records):
     if not history_records:
          return {"error": "No data available to predict"}
          
-    if len(history_records) < 10:
+    # Only simulate if we have effectively NO data (less than 3 days)
+    # This ensures that even small real samples are respected without simulation noise
+    if len(history_records) < 3:
          history_records = generate_simulated_history(history_records)
          
     df = pd.DataFrame(history_records)
     if df.empty: 
         return {"error": "No data available to predict"}
 
-    # Date formatting for Time Series Regression
+    # Robust Date formatting for Time Series Regression
     df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df['epoch'] = df['timestamp'].astype('int64') // 10**9  # seconds since epoch
+    
+    # Feature Scaling: Use days since the first record instead of absolute epoch
+    # This keeps values small (0-30) and prevents numerical explosion in Linear Regression
+    min_ts = df['timestamp'].min()
+    df['days_delta'] = (df['timestamp'] - min_ts).dt.total_seconds() / 86400.0
     
     # --- 1. Linear Regression Pricing Trend ---
     # We want to predict tomorrow's average price across all platforms
-    avg_daily = df.groupby('epoch')['price'].mean().reset_index()
-    X_trend = avg_daily[['epoch']]
+    avg_daily = df.groupby('days_delta')['price'].mean().reset_index()
+    X_trend = avg_daily[['days_delta']]
     y_trend = avg_daily['price']
     
     lin_reg = LinearRegression()
     lin_reg.fit(X_trend, y_trend)
     
-    # Predict tomorrow's price
-    tomorrow_epoch = int((datetime.now() + timedelta(days=1)).timestamp())
-    pred_tomorrow_price = lin_reg.predict([[tomorrow_epoch]])[0]
+    # Predict tomorrow's price (relative to min_ts)
+    tomorrow_ts = datetime.now() + timedelta(days=1)
+    tomorrow_delta = (tomorrow_ts - min_ts).total_seconds() / 86400.0
+    pred_tomorrow_price = lin_reg.predict([[tomorrow_delta]])[0]
     
+    # Clamping: Ensure predicted price isn't ridiculously negative or zero
     current_avg = avg_daily['price'].iloc[-1]
+    pred_tomorrow_price = max(current_avg * 0.5, min(current_avg * 1.5, pred_tomorrow_price))
     
+    # --- 3. Trend Detection & Recommendations ---
+    change_pct = ((pred_tomorrow_price - current_avg) / current_avg) * 100
+    
+    # Trend Classification
+    trend_status = "STABLE"
+    if change_pct < -0.8:
+        trend_status = "DROPPING"
+    elif change_pct > 0.8:
+        trend_status = "RISING"
+        
     # Logic: if tomorrow is predicted to be at least 1.5% cheaper, WAIT
     recommendation = "Buy Now"
-    if pred_tomorrow_price < (current_avg * 0.985):
+    if change_pct < -1.5:
         recommendation = "Wait"
         
-    # --- 2. Random Forest to predict Best Platform ---
+    # --- 4. Random Forest to predict Best Platform ---
     # Feature Engineering
     df['day_of_week'] = df['timestamp'].dt.dayofweek
     df['is_weekend'] = df['day_of_week'].apply(lambda x: 1 if x >= 5 else 0)
@@ -124,6 +150,8 @@ def predict_insights(history_records):
         "status": "success",
         "recommendation": recommendation,
         "predicted_price": int(pred_tomorrow_price),
+        "change_pct": float(round(change_pct, 2)),
+        "trend": trend_status,
         "best_platform": best_platform,
         "confidence": confidence,
         "current_avg": int(current_avg)

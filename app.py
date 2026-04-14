@@ -11,7 +11,7 @@ try:
 except ImportError:
     pass
 
-from scraper import scrape_all
+from services.scraper import scrape_all
 
 app = Flask(__name__, static_folder='frontend-react/dist', static_url_path='')
 CORS(app)
@@ -32,7 +32,7 @@ def token_required(f):
             
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            from database import get_user_by_id
+            from services.database import get_user_by_id
             current_user = get_user_by_id(data['user_id'])
             if not current_user:
                 return jsonify({'error': 'User not found!'}), 401
@@ -53,7 +53,7 @@ def register():
     if not email or not password:
         return jsonify({'error': 'Email and password required'}), 400
         
-    from database import create_user
+    from services.database import create_user
     user_id = create_user(email, password, name)
     if not user_id:
         return jsonify({'error': 'User already exists'}), 400
@@ -69,7 +69,7 @@ def login():
     if not email or not password:
         return jsonify({'error': 'Email and password required'}), 400
         
-    from database import verify_user
+    from services.database import verify_user
     user = verify_user(email, password)
     
     if not user:
@@ -91,7 +91,7 @@ def login():
 @app.route('/api/user/profile', methods=['GET'])
 @token_required
 def profile(current_user):
-    from database import get_user_alerts
+    from services.database import get_user_alerts
     alerts = get_user_alerts(current_user['id'])
     return jsonify({'user': current_user, 'alerts': alerts})
 
@@ -123,7 +123,7 @@ def compare():
     results = scrape_all(query)
 
     if not results:
-        from database import get_product_fallback
+        from services.database import get_product_fallback
         fallback_data = get_product_fallback(query)
         
         if fallback_data:
@@ -173,7 +173,7 @@ def compare():
             best_image = results[0]['image']
             
             # Save the fake data so the database respects it!
-            from database import save_product, save_price
+            from services.database import save_product, save_price
             save_product(best_name, 'Mock Product', best_image)
             for r in results:
                 save_price(best_name, r['platform'], r['price'], r['rating'], r['url'])
@@ -201,7 +201,7 @@ def compare():
     best_name  = next((r['name'] for r in results if r.get('name') and r['name'] != query), query)
 
     try:
-        from database import save_product, save_price, check_alerts
+        from services.database import save_product, save_price, check_alerts
         save_product(best_name, 'Product', best_image)
         for r in results:
             save_price(best_name, r['platform'], r['price'], r.get('rating'), r.get('url'))
@@ -231,7 +231,7 @@ def history():
     if not product:
         return jsonify({'error': 'product param required'}), 400
     try:
-        from database import get_price_history
+        from services.database import get_price_history
         records = get_price_history(product, platform, days)
         return jsonify({'product': product, 'history': records})
     except Exception as e:
@@ -245,8 +245,8 @@ def get_prediction():
         return jsonify({'error': 'product required'}), 400
         
     try:
-        from database import get_price_history
-        from ai_engine import predict_insights
+        from services.database import get_price_history
+        from services.ai_engine import predict_insights
         
         # Pull history from MongoDB
         history = get_price_history(product, days=30)
@@ -254,13 +254,20 @@ def get_prediction():
         # Run ML inference
         insights = predict_insights(history)
         
-        if not insights or "error" in insights:
-            return jsonify({'error': 'Not enough data'}), 400
+        if not insights:
+            return jsonify({'error': 'Prediction engine failed to return insights'}), 500
+
+        if "error" in insights:
+            return jsonify({
+                'error': 'Insufficient Data', 
+                'details': insights['error'],
+                'message': f"We need at least a few days of price history for '{product}' to generate AI insights."
+            }), 400
             
         return jsonify(insights)
     except Exception as e:
         print(f"ML Error: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Machine Learning error: {str(e)}'}), 500
 
 # ── Set alert ───────────────────────────────
 @app.route('/api/alert', methods=['POST'])
@@ -285,7 +292,7 @@ def create_alert():
                 pass
                 
     try:
-        from database import set_alert
+        from services.database import set_alert
         set_alert(product, platform, threshold, data.get('email'), user_id)
     except Exception as e:
         print(f'Alert save error: {e}')
@@ -295,7 +302,7 @@ def create_alert():
 @app.route('/api/products')
 def products():
     try:
-        from database import get_all_tracked_products
+        from services.database import get_all_tracked_products
         return jsonify(get_all_tracked_products())
     except Exception as e:
         return jsonify([])
@@ -307,7 +314,7 @@ def get_reviews_api():
     if not product:
         return jsonify({'error': 'product required'}), 400
     try:
-        from database import get_reviews
+        from services.database import get_reviews
         reviews = get_reviews(product)
         return jsonify({'product': product, 'reviews': reviews})
     except Exception as e:
@@ -330,7 +337,7 @@ def post_review():
         return jsonify({'error': 'Missing required fields'}), 400
 
     try:
-        from database import save_review
+        from services.database import save_review
         review_id = save_review(product, name, rating, title, body, platform, verified, tags)
         return jsonify({'status': 'ok', 'id': review_id})
     except Exception as e:
@@ -342,7 +349,7 @@ def post_review():
 def helpful():
     data = request.json or {}
     try:
-        from database import mark_helpful
+        from services.database import mark_helpful
         mark_helpful(data.get('product'), data.get('id'))
     except Exception as e:
         pass
