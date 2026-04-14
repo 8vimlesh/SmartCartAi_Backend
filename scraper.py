@@ -300,7 +300,7 @@ def search_platform_specific(query, platform_key):
         from serpapi import GoogleSearch
         params = {
             "engine":  "google_shopping",
-            "q":       query,
+            "q":       f"{query} {platform_key}",
             "gl":      "in",
             "hl":      "en",
             "num":     5,
@@ -468,14 +468,13 @@ def scrape_all(query):
 
     # ── Strategy 1: Google Shopping ──────────────
     all_items = search_shopping(query)
+    platform_data, best_image, best_name = process_items(all_items)
 
     # ── Strategy 2: If few results, try Google main ──
-    if len(all_items) < 4:
-        print("  Few results — trying Google main search…")
+    if len(platform_data) < 2:
+        print("  Few supported platforms — trying Google main search…")
         all_items += search_google(query)
-
-    # ── Process all items ─────────────────────────
-    platform_data, best_image, best_name = process_items(all_items)
+        platform_data, best_image, best_name = process_items(all_items)
 
     # ── Strategy 3: If key platforms missing, search them directly ──
     key_platforms = ["amazon", "flipkart"]
@@ -515,7 +514,10 @@ def scrape_all(query):
     print(f"\n  Results for '{query}':")
     for r in results:
         pname = PLATFORMS.get(r["platform"], {}).get("name", r["platform"])
-        print(f"    {pname:<16}  ₹{r['price']:>9,}   {r['discount']}% off")
+        try:
+            print(f"    {pname:<16}  Rs.{r['price']:>9,}   {r['discount']}% off")
+        except UnicodeEncodeError:
+            pass
     print(f"\n  Total: {len(results)} platforms found")
     print(f"{'='*55}\n")
 
@@ -544,7 +546,10 @@ if __name__ == "__main__":
         for r in results:
             print(f"\n  Platform : {r['platform']}")
             print(f"  Name     : {r['name'][:60]}")
-            print(f"  Price    : ₹{r['price']:,}")
+            try:
+                print(f"  Price    : Rs.{r['price']:,}")
+            except UnicodeEncodeError:
+                pass
             print(f"  Discount : {r['discount']}%")
             print(f"  Rating   : {r['rating']}")
             print(f"  URL      : {r['url'][:60]}")
