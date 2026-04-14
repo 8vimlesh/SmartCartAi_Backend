@@ -364,5 +364,5 @@ def handle_500(error):
 if __name__ == '__main__':
     port  = int(os.getenv('PORT', 5000))
     debug = os.getenv('DEBUG', 'True') == 'True'
-    print(f'\nSmartCart running at http://localhost:{port}\n')
-    app.run(debug=debug, port=port)
+    print(f'\nSmartCart running at http://0.0.0.0:{port}\n')
+    app.run(host='0.0.0.0', debug=debug, port=port)
