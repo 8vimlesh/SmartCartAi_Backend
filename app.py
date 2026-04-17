@@ -271,7 +271,8 @@ def get_prediction():
 
 # ── Set alert ───────────────────────────────
 @app.route('/api/alert', methods=['POST'])
-def create_alert():
+@token_required
+def create_alert(current_user):
     data      = request.json or {}
     product   = data.get('product')
     platform  = data.get('platform')
@@ -280,22 +281,12 @@ def create_alert():
     if not all([product, platform, threshold]):
         return jsonify({'error': 'product, platform, threshold required'}), 400
         
-    # Optional auth check
-    user_id = None
-    if 'Authorization' in request.headers:
-        parts = request.headers['Authorization'].split()
-        if len(parts) == 2:
-            try:
-                decoded = jwt.decode(parts[1], app.config['SECRET_KEY'], algorithms=['HS256'])
-                user_id = decoded['user_id']
-            except:
-                pass
-                
     try:
         from services.database import set_alert
-        set_alert(product, platform, threshold, data.get('email'), user_id)
+        set_alert(product, platform, threshold, current_user['id'])
     except Exception as e:
         print(f'Alert save error: {e}')
+        return jsonify({'error': str(e)}), 400
     return jsonify({'status': 'ok'})
 
 # ── Tracked products ────────────────────────
@@ -369,6 +360,9 @@ def handle_500(error):
     return jsonify({'error': 'Server error', 'message': str(error)}), 500
 
 if __name__ == '__main__':
+    from services.scheduler import start_scheduler
+    start_scheduler()
+    
     port  = int(os.getenv('PORT', 5000))
     debug = os.getenv('DEBUG', 'True') == 'True'
     print(f'\nSmartCart running at http://0.0.0.0:{port}\n')

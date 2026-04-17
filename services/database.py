@@ -73,27 +73,45 @@ def get_price_history(product_name, platform=None, days=30):
     return records
 
 
-def set_alert(product_name, platform, threshold_price, user_email=None, user_id=None):
-    """Set a price alert."""
+def set_alert(product_name, platform, threshold_price, user_id):
+    """Set a price alert for a logged-in user."""
+    if not user_id:
+        raise ValueError("user_id is required to set an alert.")
+        
     query = {
         'product_name': product_name,
-        'platform': platform
+        'platform': platform,
+        'user_id': user_id
     }
-    if user_id:
-        query['user_id'] = user_id
-    elif user_email:
-        query['user_email'] = user_email
         
-    if user_id or user_email:
-        alerts_col.delete_many(query)
+    alerts_col.delete_many(query)
+    
+    # Check if the price already met the threshold
+    most_recent = list(price_hist_col.find(
+        {'product_name': product_name, 'platform': platform}
+    ).sort('timestamp', -1).limit(1))
+    
+    triggered = False
+    triggered_at = None
+    
+    if most_recent and most_recent[0]['price']:
+        current_price = most_recent[0]['price']
+        if current_price <= threshold_price:
+            triggered = True
+            triggered_at = datetime.now()
+            # Send email immediately
+            from .mailer import send_alert_email
+            user = get_user_by_id(user_id)
+            if user:
+                send_alert_email(user['email'], product_name, platform, current_price, threshold_price)
     
     alerts_col.insert_one({
         'product_name': product_name,
         'platform': platform,
         'threshold': threshold_price,
-        'user_email': user_email,
         'user_id': user_id,
-        'triggered': False,
+        'triggered': triggered,
+        'triggered_at': triggered_at,
         'created_at': datetime.now()
     })
 
