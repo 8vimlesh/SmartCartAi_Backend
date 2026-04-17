@@ -1,15 +1,24 @@
 from pymongo import MongoClient
-from datetime import datetime
 import os
 from dotenv import load_dotenv
-from werkzeug.security import generate_password_hash, check_password_hash
 
 load_dotenv()
 
-# Connect to MongoDB
-client = MongoClient(os.getenv('MONGO_URI', 'mongodb://localhost:27017/'))
-db = client[os.getenv('DB_NAME', 'smartcart')]
+MONGO_URI = os.getenv('MONGO_URI')
+DB_NAME = os.getenv('DB_NAME', 'SmartCartAI')
 
+try:
+    client = MongoClient(MONGO_URI)
+    client.admin.command('ping')  # 🔥 Force connection check
+    print("✅ MongoDB Connected Successfully")
+except Exception as e:
+    print("❌ MongoDB Connection Failed:", e)
+
+db = client[SmartCartAI]
+
+# Collections
+users_collection = db["users"]
+expenses_collection = db["expenses"]
 # Collections (like tables)
 products_col    = db['products']
 price_hist_col  = db['price_history']
